@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import { db, setTenantContext, checkDatabaseHealth, closeDatabaseConnection } from '@eamaim/database';
 import { assetRoutes } from './routes/assets.routes';
 import { authRoutes } from './routes/auth.routes';
 import { maintenanceRoutes } from './routes/maintenance.routes';
@@ -15,6 +16,16 @@ import { safetyRoutes } from './routes/safety.routes';
 import { regulatoryRoutes } from './routes/regulatory.routes';
 import { tenantRoutes } from './routes/tenants.routes';
 
+// ── Decorate Fastify with shared instances ──
+declare module 'fastify' {
+  interface FastifyInstance {
+    db: typeof db;
+  }
+  interface FastifyRequest {
+    tenantId: string;
+  }
+}
+
 const server = Fastify({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
@@ -25,6 +36,10 @@ const server = Fastify({
 });
 
 async function bootstrap() {
+  // ── Decorate with Database ──
+  server.decorate('db', db);
+  server.decorateRequest('tenantId', '');
+
   // ── Plugins ──
   await server.register(cors, {
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
@@ -36,12 +51,25 @@ async function bootstrap() {
     sign: { expiresIn: '24h' },
   });
 
-  // ── Middleware ──
+  // ── Tenant Context Middleware ──
   server.addHook('onRequest', async (request, reply) => {
-    // Set tenant context for RLS
-    const tenantId = request.headers['x-tenant-id'];
-    if (tenantId) {
-      (request as any).tenantId = tenantId;
+    const headerTenantId = request.headers['x-tenant-id'] as string;
+    if (headerTenantId) {
+      request.tenantId = headerTenantId;
+      await setTenantContext(headerTenantId);
+    }
+  });
+
+  // ── Audit Logging Hook ──
+  server.addHook('onResponse', async (request, reply) => {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+      server.log.info({
+        action: request.method,
+        path: request.url,
+        tenantId: request.tenantId,
+        statusCode: reply.statusCode,
+        responseTime: reply.elapsedTime,
+      }, 'audit');
     }
   });
 
@@ -61,11 +89,25 @@ async function bootstrap() {
   await server.register(regulatoryRoutes, { prefix: '/api/v1/regulatory' });
 
   // ── Health Check ──
-  server.get('/health', async () => ({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version || '0.1.0',
-  }));
+  server.get('/health', async () => {
+    const dbHealth = await checkDatabaseHealth();
+    return {
+      status: dbHealth.connected ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version || '0.1.0',
+      database: dbHealth,
+    };
+  });
+
+  // ── Graceful Shutdown ──
+  const shutdown = async (signal: string) => {
+    server.log.info(`${signal} received, shutting down gracefully...`);
+    await server.close();
+    await closeDatabaseConnection();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 
   // ── Start ──
   const port = parseInt(process.env.PORT || '3001', 10);
@@ -73,7 +115,7 @@ async function bootstrap() {
 
   try {
     await server.listen({ port, host });
-    server.log.info(`EAM/AIM/RCM API running on ${host}:${port}`);
+    server.log.info(`🚀 EAM/AIM/RCM API running on ${host}:${port}`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);
