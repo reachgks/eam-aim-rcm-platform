@@ -1,0 +1,71 @@
+{
+  "name": "@eamaim/monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EAM/AIM/RCM Platform — Enterprise Asset Management with BIM Integration, IoT Telemetry & Reliability-Centered Maintenance",
+  "license": "PROPRIETARY",
+  "author": "Anigravity",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anigravity/eamaim-platform.git"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:coverage": "turbo run test -- --coverage",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint -- --fix",
+    "format": "turbo run format",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,yaml,yml}\"",
+    "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,yaml,yml}\"",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "turbo run db:generate --filter=@eamaim/db",
+    "db:migrate": "turbo run db:migrate --filter=@eamaim/db",
+    "db:push": "turbo run db:push --filter=@eamaim/db",
+    "db:studio": "turbo run db:studio --filter=@eamaim/db",
+    "db:seed": "turbo run db:seed --filter=@eamaim/db",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:rebuild": "docker compose up -d --build --force-recreate",
+    "docker:logs": "docker compose logs -f",
+    "docker:clean": "docker compose down -v --remove-orphans",
+    "clean": "turbo run clean && rimraf node_modules .turbo",
+    "clean:turbo": "rimraf .turbo **/node_modules/.cache/turbo",
+    "prepare": "husky",
+    "postinstall": "turbo run db:generate"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.12",
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.21.0",
+    "@typescript-eslint/parser": "^8.21.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-import-resolver-typescript": "^3.7.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-unused-imports": "^4.1.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,yaml,yml}": [
+      "prettier --write"
+    ]
+  }
+}

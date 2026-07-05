@@ -1,0 +1,366 @@
+name: CD - Production
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/eamaim
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  validate:
+    name: Pre-deploy Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run full test suite
+        run: pnpm turbo run test
+        env:
+          NODE_ENV: test
+
+      - name: Run type check
+        run: pnpm turbo run type-check
+
+      - name: Build all packages
+        run: pnpm turbo run build
+
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      matrix:
+        service: [api, web, worker]
+    outputs:
+      image-tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="prod-$(echo ${{ github.sha }} | cut -c1-7)"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=prod-
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+            BUILD_SHA=${{ github.sha }}
+            BUILD_VERSION=${{ steps.version.outputs.tag }}
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: production
+      url: https://app.eamaim.io
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.PRODUCTION_KUBECONFIG }}
+
+      - name: Save current deployment state (for rollback)
+        id: pre-deploy
+        run: |
+          kubectl get deployment eamaim-api -n eamaim-production -o json > /tmp/api-backup.json || true
+          kubectl get deployment eamaim-web -n eamaim-production -o json > /tmp/web-backup.json || true
+          kubectl get deployment eamaim-worker -n eamaim-production -o json > /tmp/worker-backup.json || true
+
+          # Store the current image tags for rollback
+          CURRENT_API_IMAGE=$(kubectl get deployment eamaim-api -n eamaim-production -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+          CURRENT_WEB_IMAGE=$(kubectl get deployment eamaim-web -n eamaim-production -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+          CURRENT_WORKER_IMAGE=$(kubectl get deployment eamaim-worker -n eamaim-production -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+
+          echo "api_image=${CURRENT_API_IMAGE}" >> $GITHUB_OUTPUT
+          echo "web_image=${CURRENT_WEB_IMAGE}" >> $GITHUB_OUTPUT
+          echo "worker_image=${CURRENT_WORKER_IMAGE}" >> $GITHUB_OUTPUT
+
+      - name: Run database migrations
+        run: |
+          kubectl apply -f k8s/production/migration-job.yml --namespace=eamaim-production
+          kubectl wait --for=condition=complete job/db-migration --namespace=eamaim-production --timeout=600s
+
+      - name: Deploy to production
+        id: deploy
+        run: |
+          export IMAGE_TAG="${{ needs.build-and-push.outputs.image-tag }}"
+
+          # Update image tags in manifests
+          sed -i "s|IMAGE_TAG_PLACEHOLDER|${IMAGE_TAG}|g" k8s/production/*.yml
+
+          # Apply Kubernetes manifests
+          kubectl apply -f k8s/production/ --namespace=eamaim-production
+
+          # Wait for rollout to complete
+          kubectl rollout status deployment/eamaim-api --namespace=eamaim-production --timeout=600s
+          kubectl rollout status deployment/eamaim-web --namespace=eamaim-production --timeout=600s
+          kubectl rollout status deployment/eamaim-worker --namespace=eamaim-production --timeout=600s
+
+  health-checks:
+    name: Post-deploy Health Checks
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait for services to stabilize
+        run: sleep 30
+
+      - name: API health check
+        run: |
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.eamaim.io/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ API health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ API health check attempt $i returned $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "❌ API health check failed after 10 attempts"
+          exit 1
+
+      - name: Web health check
+        run: |
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://app.eamaim.io)
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Web health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Web health check attempt $i returned $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "❌ Web health check failed after 10 attempts"
+          exit 1
+
+      - name: Database connectivity check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.eamaim.io/health/db)
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Database connectivity check failed"
+            exit 1
+          fi
+          echo "✅ Database connectivity check passed"
+
+      - name: Redis connectivity check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.eamaim.io/health/redis)
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Redis connectivity check failed"
+            exit 1
+          fi
+          echo "✅ Redis connectivity check passed"
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-production, health-checks]
+    if: failure()
+    steps:
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.PRODUCTION_KUBECONFIG }}
+
+      - name: Rollback deployments
+        run: |
+          echo "🔄 Rolling back production deployments..."
+
+          kubectl rollout undo deployment/eamaim-api --namespace=eamaim-production
+          kubectl rollout undo deployment/eamaim-web --namespace=eamaim-production
+          kubectl rollout undo deployment/eamaim-worker --namespace=eamaim-production
+
+          # Wait for rollback to complete
+          kubectl rollout status deployment/eamaim-api --namespace=eamaim-production --timeout=300s
+          kubectl rollout status deployment/eamaim-web --namespace=eamaim-production --timeout=300s
+          kubectl rollout status deployment/eamaim-worker --namespace=eamaim-production --timeout=300s
+
+          echo "✅ Rollback completed successfully"
+
+      - name: Verify rollback health
+        run: |
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.eamaim.io/health)
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Services healthy after rollback"
+          else
+            echo "⚠️ WARNING: Services may still be unhealthy after rollback (status: $STATUS)"
+          fi
+
+      - name: Notify rollback
+        uses: slackapi/slack-github-action@v2.0.0
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚨 PRODUCTION ROLLBACK EXECUTED",
+              "attachments": [
+                {
+                  "color": "#dc3545",
+                  "fields": [
+                    { "title": "Repository", "value": "${{ github.repository }}", "short": true },
+                    { "title": "Commit", "value": "${{ github.sha }}", "short": true },
+                    { "title": "Triggered by", "value": "${{ github.actor }}", "short": true },
+                    { "title": "Workflow", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>", "short": false }
+                  ]
+                }
+              ]
+            }
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: health-checks
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          CURRENT_TAG="${{ github.ref_name }}"
+
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges HEAD)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges ${PREV_TAG}..${CURRENT_TAG})
+          fi
+
+          # Write to file to handle multiline
+          echo "$CHANGELOG" > /tmp/changelog.txt
+
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const changelog = fs.readFileSync('/tmp/changelog.txt', 'utf8');
+            const tag = context.ref.replace('refs/tags/', '');
+            const isPrerelease = tag.includes('-rc') || tag.includes('-beta') || tag.includes('-alpha');
+
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `EAM/AIM Platform ${tag}`,
+              body: `## What's Changed\n\n${changelog}\n\n## Docker Images\n\n- \`ghcr.io/${{ env.IMAGE_PREFIX }}-api:${tag}\`\n- \`ghcr.io/${{ env.IMAGE_PREFIX }}-web:${tag}\`\n- \`ghcr.io/${{ env.IMAGE_PREFIX }}-worker:${tag}\`\n\n**Full Changelog**: https://github.com/${context.repo.owner}/${context.repo.repo}/compare/${tag}...${tag}`,
+              draft: false,
+              prerelease: isPrerelease,
+              generate_release_notes: true
+            });
+
+            core.info(`Release created: ${release.data.html_url}`);
+
+  notify-production:
+    name: Notify Production Deployment
+    runs-on: ubuntu-latest
+    needs: [health-checks, create-release]
+    if: always() && needs.health-checks.result == 'success'
+    steps:
+      - name: Send success notification
+        uses: slackapi/slack-github-action@v2.0.0
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚀 Production deployment successful!",
+              "attachments": [
+                {
+                  "color": "#36a64f",
+                  "fields": [
+                    { "title": "Version", "value": "${{ github.ref_name }}", "short": true },
+                    { "title": "Environment", "value": "Production", "short": true },
+                    { "title": "Deployed by", "value": "${{ github.actor }}", "short": true },
+                    { "title": "Commit", "value": "<${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>", "short": true },
+                    { "title": "Workflow", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>", "short": false }
+                  ]
+                }
+              ]
+            }

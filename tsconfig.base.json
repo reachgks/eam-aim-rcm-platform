@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "EAM/AIM/RCM Base Config",
+  "compilerOptions": {
+    /* Language & Environment */
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "moduleDetection": "force",
+
+    /* Strict Type-Checking */
+    "strict": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "exactOptionalPropertyTypes": true,
+
+    /* Emit */
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "incremental": true,
+    "composite": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+
+    /* Interop */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    /* Path Aliases */
+    "baseUrl": ".",
+    "paths": {
+      "@eamaim/db": ["packages/db/src/index.ts"],
+      "@eamaim/db/*": ["packages/db/src/*"],
+      "@eamaim/shared": ["packages/shared/src/index.ts"],
+      "@eamaim/shared/*": ["packages/shared/src/*"],
+      "@eamaim/validators": ["packages/validators/src/index.ts"],
+      "@eamaim/validators/*": ["packages/validators/src/*"],
+      "@eamaim/types": ["packages/types/src/index.ts"],
+      "@eamaim/types/*": ["packages/types/src/*"],
+      "@eamaim/logger": ["packages/logger/src/index.ts"],
+      "@eamaim/logger/*": ["packages/logger/src/*"],
+      "@eamaim/config": ["packages/config/src/index.ts"],
+      "@eamaim/config/*": ["packages/config/src/*"],
+      "@eamaim/auth": ["packages/auth/src/index.ts"],
+      "@eamaim/auth/*": ["packages/auth/src/*"],
+      "@eamaim/queue": ["packages/queue/src/index.ts"],
+      "@eamaim/queue/*": ["packages/queue/src/*"],
+      "@eamaim/telemetry": ["packages/telemetry/src/index.ts"],
+      "@eamaim/telemetry/*": ["packages/telemetry/src/*"],
+      "@eamaim/ifc-parser": ["packages/ifc-parser/src/index.ts"],
+      "@eamaim/ifc-parser/*": ["packages/ifc-parser/src/*"]
+    }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".turbo",
+    "coverage",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/__tests__/**"
+  ]
+}

@@ -1,0 +1,136 @@
+# ========================================
+# Dependencies
+# ========================================
+node_modules/
+.pnpm-store/
+
+# ========================================
+# Build Outputs
+# ========================================
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Next.js
+.next/
+.vercel/
+
+# ========================================
+# Turborepo
+# ========================================
+.turbo/
+
+# ========================================
+# Environment Variables
+# ========================================
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+!.env.example
+
+# ========================================
+# Test & Coverage
+# ========================================
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+
+# ========================================
+# Logs
+# ========================================
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ========================================
+# OS Files
+# ========================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# ========================================
+# IDE & Editors
+# ========================================
+.vscode/settings.json
+.vscode/launch.json
+.vscode/*.code-workspace
+!.vscode/extensions.json
+!.vscode/tasks.json
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# ========================================
+# Docker
+# ========================================
+docker-data/
+postgres-data/
+redis-data/
+pgadmin-data/
+mosquitto-data/
+minio-data/
+
+# ========================================
+# Database
+# ========================================
+*.sql.bak
+*.dump
+
+# ========================================
+# Compiled JS from TypeScript
+# ========================================
+*.js.map
+*.d.ts.map
+
+# ========================================
+# Misc
+# ========================================
+.cache/
+tmp/
+temp/
+*.tgz
+*.gz
+*.zip
+.eslintcache
+.prettiercache
+
+# ========================================
+# IFC / BIM Large Files (use Git LFS)
+# ========================================
+*.ifc
+*.ifczip
+*.nwd
+*.nwc
+*.rvt
+*.dwg
+*.fbx
+*.glb
+!**/*.glb.example
+
+# ========================================
+# Sentry
+# ========================================
+.sentryclirc
+
+# ========================================
+# Secrets & Certificates
+# ========================================
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12

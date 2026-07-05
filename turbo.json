@@ -1,0 +1,116 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "**/.env",
+    "**/.env.local",
+    "tsconfig.base.json"
+  ],
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "API_PORT",
+    "API_HOST",
+    "WEB_PORT",
+    "JWT_SECRET",
+    "JWT_REFRESH_SECRET",
+    "LOG_LEVEL"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "src/**",
+        "tsconfig.json",
+        "package.json"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": [
+        "^build"
+      ]
+    },
+    "test": {
+      "dependsOn": [
+        "build"
+      ],
+      "inputs": [
+        "src/**",
+        "tests/**",
+        "test/**",
+        "__tests__/**",
+        "vitest.config.*"
+      ],
+      "outputs": [
+        "coverage/**"
+      ]
+    },
+    "lint": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "src/**",
+        ".eslintrc.*",
+        "tsconfig.json"
+      ],
+      "outputs": []
+    },
+    "format": {
+      "cache": false,
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "src/**",
+        "tsconfig.json"
+      ],
+      "outputs": []
+    },
+    "db:generate": {
+      "cache": false,
+      "inputs": [
+        "src/schema/**",
+        "drizzle.config.*"
+      ],
+      "outputs": [
+        "drizzle/**"
+      ]
+    },
+    "db:migrate": {
+      "cache": false,
+      "dependsOn": [
+        "db:generate"
+      ]
+    },
+    "db:push": {
+      "cache": false
+    },
+    "db:studio": {
+      "cache": false,
+      "persistent": true
+    },
+    "db:seed": {
+      "cache": false,
+      "dependsOn": [
+        "db:migrate"
+      ]
+    },
+    "clean": {
+      "cache": false,
+      "outputs": []
+    }
+  }
+}

@@ -1,0 +1,3 @@
+﻿export interface TreeNode<T> { data: T; children: TreeNode<T>[]; }
+export function buildTree<T extends { id: string; parentId?: string | null }>(items: T[]): TreeNode<T>[] { const map = new Map<string, TreeNode<T>>(); const roots: TreeNode<T>[] = []; items.forEach(item => map.set(item.id, { data: item, children: [] })); items.forEach(item => { const node = map.get(item.id)!; if (item.parentId && map.has(item.parentId)) { map.get(item.parentId)!.children.push(node); } else { roots.push(node); } }); return roots; }
+export function flattenTree<T>(nodes: TreeNode<T>[]): T[] { const result: T[] = []; function walk(n: TreeNode<T>[]) { n.forEach(node => { result.push(node.data); walk(node.children); }); } walk(nodes); return result; }

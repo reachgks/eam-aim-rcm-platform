@@ -1,0 +1,49 @@
+# ============================================================================
+# CODEOWNERS - EAM/AIM Platform
+# ============================================================================
+# This file defines code ownership for the EAM/AIM monorepo.
+# Each line is a file pattern followed by one or more owners.
+# Order matters — later patterns take precedence over earlier ones.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# ============================================================================
+
+# ---- Default Owner (catch-all) ----
+*                                       @eamaim/core-team
+
+# ---- Database & Schema ----
+packages/database/                      @eamaim/database-team
+**/migrations/                          @eamaim/database-team
+**/schema/                              @eamaim/database-team
+**/seeds/                               @eamaim/database-team
+
+# ---- Backend / API ----
+apps/api/                               @eamaim/backend-team
+packages/api-client/                    @eamaim/backend-team
+packages/shared/                        @eamaim/backend-team @eamaim/frontend-team
+
+# ---- Frontend / Web ----
+apps/web/                               @eamaim/frontend-team
+packages/ui/                            @eamaim/frontend-team
+packages/hooks/                         @eamaim/frontend-team
+
+# ---- Worker / Background Jobs ----
+apps/worker/                            @eamaim/backend-team
+
+# ---- Standards & Documentation ----
+docs/                                   @eamaim/core-team
+docs/standards/                         @eamaim/standards-team
+docs/architecture/                      @eamaim/core-team @eamaim/standards-team
+
+# ---- DevOps / Infrastructure ----
+.github/                                @eamaim/devops-team
+docker/                                 @eamaim/devops-team
+k8s/                                    @eamaim/devops-team
+Dockerfile*                             @eamaim/devops-team
+docker-compose*.yml                     @eamaim/devops-team
+
+# ---- Configuration ----
+turbo.json                              @eamaim/core-team @eamaim/devops-team
+pnpm-workspace.yaml                     @eamaim/core-team
+tsconfig*.json                          @eamaim/core-team
+.eslintrc*                              @eamaim/core-team
+.prettierrc*                            @eamaim/core-team
