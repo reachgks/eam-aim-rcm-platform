@@ -1,27 +1,26 @@
-﻿import { FastifyInstance } from 'fastify';
+import { FastifyInstance } from 'fastify';
+import { bimService } from '../services/bim.service';
 
 export async function bimRoutes(server: FastifyInstance) {
-  server.get('/', async (request, reply) => {
-    const { page = 1, limit = 50 } = request.query as any;
-    return { data: [], pagination: { page, limit, total: 0 } };
-  });
+  server.get('/models', async (request) => ({ data: await bimService.findAllModels(request.tenantId) }));
 
-  server.get('/:id', async (request, reply) => {
+  server.get('/models/:id', async (request, reply) => {
     const { id } = request.params as any;
-    return { data: null };
+    const model = await bimService.findModelById(request.tenantId, id);
+    if (!model) return reply.code(404).send({ error: 'IFC model not found' });
+    return { data: model };
   });
 
-  server.post('/', async (request, reply) => {
-    return reply.code(201).send({ data: request.body });
+  server.post('/models', async (request, reply) => {
+    return reply.code(201).send({ data: await bimService.createModel(request.tenantId, request.body) });
   });
 
-  server.put('/:id', async (request, reply) => {
-    const { id } = request.params as any;
-    return { data: { id, ...(request.body as any) } };
+  server.post('/element-links', async (request, reply) => {
+    return reply.code(201).send({ data: await bimService.linkElementToAsset(request.tenantId, request.body) });
   });
 
-  server.delete('/:id', async (request, reply) => {
-    return { success: true };
+  server.get('/asset-links/:assetId', async (request) => {
+    const { assetId } = request.params as any;
+    return { data: await bimService.getAssetLinks(request.tenantId, assetId) };
   });
 }
-

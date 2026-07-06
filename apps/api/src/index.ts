@@ -15,6 +15,14 @@ import { laborRoutes } from './routes/labor.routes';
 import { safetyRoutes } from './routes/safety.routes';
 import { regulatoryRoutes } from './routes/regulatory.routes';
 import { tenantRoutes } from './routes/tenants.routes';
+import { bimRoutes } from './routes/bim.routes';
+import { oirairRoutes } from './routes/oir-air.routes';
+import { contractorsRoutes } from './routes/contractors.routes';
+import { projectsRoutes } from './routes/projects.routes';
+import { servicerequestsRoutes } from './routes/service-requests.routes';
+import { slaRoutes } from './routes/sla.routes';
+import { warrantyRoutes } from './routes/warranty.routes';
+import { reportsRoutes } from './routes/reports.routes';
 
 // ── Decorate Fastify with shared instances ──
 declare module 'fastify' {
@@ -87,6 +95,14 @@ async function bootstrap() {
   await server.register(laborRoutes, { prefix: '/api/v1/labor' });
   await server.register(safetyRoutes, { prefix: '/api/v1/safety' });
   await server.register(regulatoryRoutes, { prefix: '/api/v1/regulatory' });
+  await server.register(bimRoutes, { prefix: '/api/v1/bim' });
+  await server.register(oirairRoutes, { prefix: '/api/v1/oir-air' });
+  await server.register(contractorsRoutes, { prefix: '/api/v1/contractors' });
+  await server.register(projectsRoutes, { prefix: '/api/v1/projects' });
+  await server.register(servicerequestsRoutes, { prefix: '/api/v1/service-requests' });
+  await server.register(slaRoutes, { prefix: '/api/v1/sla' });
+  await server.register(warrantyRoutes, { prefix: '/api/v1/warranty' });
+  await server.register(reportsRoutes, { prefix: '/api/v1/reports' });
 
   // ── Health Check ──
   server.get('/health', async () => {

@@ -1,27 +1,44 @@
-﻿import { FastifyInstance } from 'fastify';
+import { FastifyInstance } from 'fastify';
+import { procurementService } from '../services/procurement.service';
 
 export async function procurementRoutes(server: FastifyInstance) {
-  server.get('/', async (request, reply) => {
-    const { page = 1, limit = 50 } = request.query as any;
-    return { data: [], pagination: { page, limit, total: 0 } };
+  server.get('/vendors', async (request) => {
+    const { page, limit, search } = request.query as any;
+    return procurementService.findAllVendors(request.tenantId, { page: Number(page) || undefined, limit: Number(limit) || undefined, search });
   });
 
-  server.get('/:id', async (request, reply) => {
+  server.post('/vendors', async (request, reply) => {
+    return reply.code(201).send({ data: await procurementService.createVendor(request.tenantId, request.body) });
+  });
+
+  server.put('/vendors/:id', async (request, reply) => {
     const { id } = request.params as any;
-    return { data: null };
+    const updated = await procurementService.updateVendor(request.tenantId, id, request.body);
+    if (!updated) return reply.code(404).send({ error: 'Vendor not found' });
+    return { data: updated };
   });
 
-  server.post('/', async (request, reply) => {
-    return reply.code(201).send({ data: request.body });
+  server.post('/requisitions', async (request, reply) => {
+    return reply.code(201).send({ data: await procurementService.createRequisition(request.tenantId, request.body) });
   });
 
-  server.put('/:id', async (request, reply) => {
+  server.get('/purchase-orders', async (request) => {
+    const { page, limit, status } = request.query as any;
+    return procurementService.findAllPOs(request.tenantId, { page: Number(page) || undefined, limit: Number(limit) || undefined, status });
+  });
+
+  server.get('/purchase-orders/:id', async (request, reply) => {
     const { id } = request.params as any;
-    return { data: { id, ...(request.body as any) } };
+    const po = await procurementService.findPOById(request.tenantId, id);
+    if (!po) return reply.code(404).send({ error: 'PO not found' });
+    return { data: po };
   });
 
-  server.delete('/:id', async (request, reply) => {
-    return { success: true };
+  server.post('/purchase-orders', async (request, reply) => {
+    return reply.code(201).send({ data: await procurementService.createPO(request.tenantId, request.body) });
+  });
+
+  server.post('/goods-receipts', async (request, reply) => {
+    return reply.code(201).send({ data: await procurementService.receiveGoods(request.tenantId, request.body) });
   });
 }
-

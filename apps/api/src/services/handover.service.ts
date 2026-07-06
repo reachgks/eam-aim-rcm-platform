@@ -1,33 +1,28 @@
-﻿// HandoverService — Business logic for handover module
+import { eq, and, desc } from 'drizzle-orm';
+import { db } from '@eamaim/database';
+import { handoverPackages, handoverItems } from '@eamaim/database/schema';
 
 export class HandoverService {
-  constructor(private db: any) {}
-
-  async findAll(tenantId: string, options?: { page?: number; limit?: number; filters?: Record<string, any> }) {
-    const page = options?.page || 1;
-    const limit = options?.limit || 50;
-    // TODO: Implement with Drizzle ORM
-    return { data: [], total: 0, page, limit };
+  async findAll(tenantId: string) {
+    return db.select().from(handoverPackages).where(eq(handoverPackages.tenantId, tenantId)).orderBy(desc(handoverPackages.createdAt));
   }
 
   async findById(tenantId: string, id: string) {
-    // TODO: Implement
-    return null;
+    const [pkg] = await db.select().from(handoverPackages).where(and(eq(handoverPackages.id, id), eq(handoverPackages.tenantId, tenantId))).limit(1);
+    if (!pkg) return null;
+    const items = await db.select().from(handoverItems).where(eq(handoverItems.packageId, id));
+    return { ...pkg, items };
   }
 
   async create(tenantId: string, data: any) {
-    // TODO: Implement
-    return { id: 'new-id', ...data };
+    const [pkg] = await db.insert(handoverPackages).values({ ...data, tenantId }).returning();
+    return pkg;
   }
 
-  async update(tenantId: string, id: string, data: any) {
-    // TODO: Implement
-    return { id, ...data };
-  }
-
-  async delete(tenantId: string, id: string) {
-    // TODO: Implement soft delete
-    return true;
+  async addItem(tenantId: string, packageId: string, data: any) {
+    const [item] = await db.insert(handoverItems).values({ ...data, tenantId, packageId }).returning();
+    return item;
   }
 }
 
+export const handoverService = new HandoverService();

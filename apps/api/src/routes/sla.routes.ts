@@ -1,27 +1,24 @@
-﻿import { FastifyInstance } from 'fastify';
+import { FastifyInstance } from 'fastify';
+import { slaService } from '../services/sla.service';
 
 export async function slaRoutes(server: FastifyInstance) {
-  server.get('/', async (request, reply) => {
-    const { page = 1, limit = 50 } = request.query as any;
-    return { data: [], pagination: { page, limit, total: 0 } };
-  });
+  server.get('/', async (request) => ({ data: await slaService.findAll(request.tenantId) }));
+
+  server.get('/summary', async (request) => ({ data: await slaService.getSummary(request.tenantId) }));
 
   server.get('/:id', async (request, reply) => {
     const { id } = request.params as any;
-    return { data: null };
+    const sla = await slaService.findById(request.tenantId, id);
+    if (!sla) return reply.code(404).send({ error: 'SLA not found' });
+    return { data: sla };
   });
 
   server.post('/', async (request, reply) => {
-    return reply.code(201).send({ data: request.body });
+    return reply.code(201).send({ data: await slaService.create(request.tenantId, request.body) });
   });
 
-  server.put('/:id', async (request, reply) => {
-    const { id } = request.params as any;
-    return { data: { id, ...(request.body as any) } };
-  });
-
-  server.delete('/:id', async (request, reply) => {
-    return { success: true };
+  server.get('/breaches', async (request) => {
+    const { slaId, limit } = request.query as any;
+    return { data: await slaService.getBreaches(request.tenantId, { slaId, limit: Number(limit) || undefined }) };
   });
 }
-

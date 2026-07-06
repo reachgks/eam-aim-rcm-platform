@@ -1,33 +1,22 @@
-﻿// DataQualityService — Business logic for data-quality module
+import { eq, and, desc, sql, count } from 'drizzle-orm';
+import { db } from '@eamaim/database';
+import { dataQualityRules, dataQualityScores } from '@eamaim/database/schema';
 
 export class DataQualityService {
-  constructor(private db: any) {}
-
-  async findAll(tenantId: string, options?: { page?: number; limit?: number; filters?: Record<string, any> }) {
-    const page = options?.page || 1;
-    const limit = options?.limit || 50;
-    // TODO: Implement with Drizzle ORM
-    return { data: [], total: 0, page, limit };
+  async getRules(tenantId: string) {
+    return db.select().from(dataQualityRules).where(eq(dataQualityRules.tenantId, tenantId));
   }
 
-  async findById(tenantId: string, id: string) {
-    // TODO: Implement
-    return null;
+  async createRule(tenantId: string, data: any) {
+    const [rule] = await db.insert(dataQualityRules).values({ ...data, tenantId }).returning();
+    return rule;
   }
 
-  async create(tenantId: string, data: any) {
-    // TODO: Implement
-    return { id: 'new-id', ...data };
-  }
-
-  async update(tenantId: string, id: string, data: any) {
-    // TODO: Implement
-    return { id, ...data };
-  }
-
-  async delete(tenantId: string, id: string) {
-    // TODO: Implement soft delete
-    return true;
+  async getScores(tenantId: string, entityId?: string) {
+    const conditions = [eq(dataQualityScores.tenantId, tenantId)];
+    if (entityId) conditions.push(eq(dataQualityScores.entityId, entityId));
+    return db.select().from(dataQualityScores).where(and(...conditions)).orderBy(desc(dataQualityScores.calculatedAt));
   }
 }
 
+export const dataQualityService = new DataQualityService();

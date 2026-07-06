@@ -1,33 +1,25 @@
-﻿// CostRollupService — Business logic for cost-rollup module
+import { eq, and, desc, sql } from 'drizzle-orm';
+import { db } from '@eamaim/database';
+import { costTransactions, assetCostRollup } from '@eamaim/database/schema';
 
-export class CostRollupService {
-  constructor(private db: any) {}
-
-  async findAll(tenantId: string, options?: { page?: number; limit?: number; filters?: Record<string, any> }) {
-    const page = options?.page || 1;
-    const limit = options?.limit || 50;
-    // TODO: Implement with Drizzle ORM
-    return { data: [], total: 0, page, limit };
+export class CostRollupService2 {
+  async getTransactions(tenantId: string, options: { assetId?: string; limit?: number } = {}) {
+    const conditions = [eq(costTransactions.tenantId, tenantId)];
+    if (options.assetId) conditions.push(eq(costTransactions.assetId, options.assetId));
+    return db.select().from(costTransactions).where(and(...conditions))
+      .orderBy(desc(costTransactions.transactionDate)).limit(options.limit || 100);
   }
 
-  async findById(tenantId: string, id: string) {
-    // TODO: Implement
-    return null;
+  async createTransaction(tenantId: string, data: any) {
+    const [tx] = await db.insert(costTransactions).values({ ...data, tenantId }).returning();
+    return tx;
   }
 
-  async create(tenantId: string, data: any) {
-    // TODO: Implement
-    return { id: 'new-id', ...data };
-  }
-
-  async update(tenantId: string, id: string, data: any) {
-    // TODO: Implement
-    return { id, ...data };
-  }
-
-  async delete(tenantId: string, id: string) {
-    // TODO: Implement soft delete
-    return true;
+  async getRollup(tenantId: string, assetId: string) {
+    return db.select().from(assetCostRollup)
+      .where(and(eq(assetCostRollup.tenantId, tenantId), eq(assetCostRollup.assetId, assetId)))
+      .orderBy(desc(assetCostRollup.periodStart));
   }
 }
 
+export const costRollupService2 = new CostRollupService2();

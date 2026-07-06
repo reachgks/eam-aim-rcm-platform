@@ -1,27 +1,35 @@
-﻿import { FastifyInstance } from 'fastify';
+import { FastifyInstance } from 'fastify';
+import { laborService } from '../services/labor.service';
 
 export async function laborRoutes(server: FastifyInstance) {
-  server.get('/', async (request, reply) => {
-    const { page = 1, limit = 50 } = request.query as any;
-    return { data: [], pagination: { page, limit, total: 0 } };
+  server.get('/crafts', async (request) => ({ data: await laborService.findAllCrafts(request.tenantId) }));
+
+  server.post('/crafts', async (request, reply) => {
+    return reply.code(201).send({ data: await laborService.createCraft(request.tenantId, request.body) });
   });
 
-  server.get('/:id', async (request, reply) => {
+  server.get('/crews', async (request) => ({ data: await laborService.findAllCrews(request.tenantId) }));
+
+  server.get('/crews/:id', async (request, reply) => {
     const { id } = request.params as any;
-    return { data: null };
+    const crew = await laborService.getCrewWithMembers(request.tenantId, id);
+    if (!crew) return reply.code(404).send({ error: 'Crew not found' });
+    return { data: crew };
   });
 
-  server.post('/', async (request, reply) => {
-    return reply.code(201).send({ data: request.body });
+  server.post('/bookings', async (request, reply) => {
+    return reply.code(201).send({ data: await laborService.bookLabor(request.tenantId, request.body) });
   });
 
-  server.put('/:id', async (request, reply) => {
-    const { id } = request.params as any;
-    return { data: { id, ...(request.body as any) } };
+  server.get('/bookings', async (request) => {
+    const { workOrderId, userId } = request.query as any;
+    return { data: await laborService.getLaborBookings(request.tenantId, { workOrderId, userId }) };
   });
 
-  server.delete('/:id', async (request, reply) => {
-    return { success: true };
+  server.get('/rates', async (request) => ({ data: await laborService.getLaborRates(request.tenantId) }));
+  server.get('/shifts', async (request) => ({ data: await laborService.getShifts(request.tenantId) }));
+  server.get('/certifications', async (request) => {
+    const { userId } = request.query as any;
+    return { data: await laborService.getCertifications(request.tenantId, userId) };
   });
 }
-

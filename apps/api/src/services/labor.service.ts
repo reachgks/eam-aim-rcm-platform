@@ -1,33 +1,53 @@
-﻿// LaborService — Business logic for labor module
+import { eq, and, count, desc, asc, sql } from 'drizzle-orm';
+import { db } from '@eamaim/database';
+import { crafts, craftCertifications, crews, crewMembers, laborBookings, laborRates, shifts, laborAvailability } from '@eamaim/database/schema';
 
 export class LaborService {
-  constructor(private db: any) {}
-
-  async findAll(tenantId: string, options?: { page?: number; limit?: number; filters?: Record<string, any> }) {
-    const page = options?.page || 1;
-    const limit = options?.limit || 50;
-    // TODO: Implement with Drizzle ORM
-    return { data: [], total: 0, page, limit };
+  async findAllCrafts(tenantId: string) {
+    return db.select().from(crafts).where(eq(crafts.tenantId, tenantId)).orderBy(asc(crafts.name));
   }
 
-  async findById(tenantId: string, id: string) {
-    // TODO: Implement
-    return null;
+  async createCraft(tenantId: string, data: any) {
+    const [craft] = await db.insert(crafts).values({ ...data, tenantId }).returning();
+    return craft;
   }
 
-  async create(tenantId: string, data: any) {
-    // TODO: Implement
-    return { id: 'new-id', ...data };
+  async findAllCrews(tenantId: string) {
+    return db.select().from(crews).where(eq(crews.tenantId, tenantId)).orderBy(asc(crews.name));
   }
 
-  async update(tenantId: string, id: string, data: any) {
-    // TODO: Implement
-    return { id, ...data };
+  async getCrewWithMembers(tenantId: string, crewId: string) {
+    const [crew] = await db.select().from(crews).where(and(eq(crews.id, crewId), eq(crews.tenantId, tenantId))).limit(1);
+    if (!crew) return null;
+    const members = await db.select().from(crewMembers).where(eq(crewMembers.crewId, crewId));
+    return { ...crew, members };
   }
 
-  async delete(tenantId: string, id: string) {
-    // TODO: Implement soft delete
-    return true;
+  async bookLabor(tenantId: string, data: any) {
+    const [booking] = await db.insert(laborBookings).values({ ...data, tenantId }).returning();
+    return booking;
+  }
+
+  async getLaborBookings(tenantId: string, options: { workOrderId?: string; userId?: string } = {}) {
+    const conditions = [eq(laborBookings.tenantId, tenantId)];
+    if (options.workOrderId) conditions.push(eq(laborBookings.workOrderId, options.workOrderId));
+    if (options.userId) conditions.push(eq(laborBookings.userId, options.userId));
+    return db.select().from(laborBookings).where(and(...conditions)).orderBy(desc(laborBookings.createdAt));
+  }
+
+  async getLaborRates(tenantId: string) {
+    return db.select().from(laborRates).where(eq(laborRates.tenantId, tenantId));
+  }
+
+  async getShifts(tenantId: string) {
+    return db.select().from(shifts).where(eq(shifts.tenantId, tenantId));
+  }
+
+  async getCertifications(tenantId: string, userId?: string) {
+    const conditions = [eq(craftCertifications.tenantId, tenantId)];
+    if (userId) conditions.push(eq(craftCertifications.userId, userId));
+    return db.select().from(craftCertifications).where(and(...conditions));
   }
 }
 
+export const laborService = new LaborService();
