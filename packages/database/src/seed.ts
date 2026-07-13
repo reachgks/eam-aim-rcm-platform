@@ -1,10 +1,11 @@
 import { sql } from 'drizzle-orm';
 import { db, closeDatabaseConnection } from './client';
+import bcrypt from 'bcrypt';
 
 // ── Core ──
 import { tenants } from './schema/core/tenants';
 import { users } from './schema/core/users';
-import { roles } from './schema/core/roles-permissions';
+import { roles, roleAssignments } from './schema/core/roles-permissions';
 // ── Asset Register ──
 import { assetTypes } from './schema/asset-register/asset-types';
 import { functionalLocations } from './schema/asset-register/functional-locations';
@@ -101,13 +102,24 @@ async function seed() {
   // 3. USERS
   // ════════════════════════════════════════════
   console.log('  [3/20] Creating users...');
-  const hash = '$2b$10$placeholder_hash_replace_in_production';
+  // Real bcrypt hash — default password: 'admin123'
+  const hash = await bcrypt.hash('admin123', 12);
   const [adminUser] = await db.insert(users).values({ tenantId: T, email: 'admin@acme-industrial.com', passwordHash: hash, firstName: 'Sarah', lastName: 'Chen', role: 'admin', isActive: true }).returning();
   const [plannerUser] = await db.insert(users).values({ tenantId: T, email: 'john.planner@acme-industrial.com', passwordHash: hash, firstName: 'John', lastName: 'Mitchell', role: 'user', isActive: true }).returning();
   const [techUser1] = await db.insert(users).values({ tenantId: T, email: 'mike.tech@acme-industrial.com', passwordHash: hash, firstName: 'Mike', lastName: 'Rodriguez', role: 'user', isActive: true }).returning();
   const [techUser2] = await db.insert(users).values({ tenantId: T, email: 'emma.tech@acme-industrial.com', passwordHash: hash, firstName: 'Emma', lastName: 'Williams', role: 'user', isActive: true }).returning();
   const [reliabilityUser] = await db.insert(users).values({ tenantId: T, email: 'raj.reliability@acme-industrial.com', passwordHash: hash, firstName: 'Raj', lastName: 'Patel', role: 'user', isActive: true }).returning();
   const [safetyUser] = await db.insert(users).values({ tenantId: T, email: 'lisa.safety@acme-industrial.com', passwordHash: hash, firstName: 'Lisa', lastName: 'Thompson', role: 'user', isActive: true }).returning();
+
+  // Wire users to roles
+  await db.insert(roleAssignments).values([
+    { userId: adminUser.id, roleId: adminRole.id, tenantId: T },
+    { userId: plannerUser.id, roleId: plannerRole.id, tenantId: T },
+    { userId: techUser1.id, roleId: techRole.id, tenantId: T },
+    { userId: techUser2.id, roleId: techRole.id, tenantId: T },
+    { userId: reliabilityUser.id, roleId: reliabilityRole.id, tenantId: T },
+    { userId: safetyUser.id, roleId: safetyRole.id, tenantId: T },
+  ]);
 
   // ════════════════════════════════════════════
   // 4. ASSET TYPE HIERARCHY
