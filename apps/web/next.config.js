@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@platform/shared-types'],
   async rewrites() {
     return [
       {
@@ -11,7 +10,9 @@ const nextConfig = {
     ];
   },
   images: {
-    domains: ['localhost'],
+    remotePatterns: [
+      { protocol: 'http', hostname: 'localhost' },
+    ],
   },
 };
 

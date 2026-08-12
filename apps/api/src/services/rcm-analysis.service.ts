@@ -1,8 +1,8 @@
 import { eq, and, count, desc, asc, sql } from 'drizzle-orm';
 import { db } from '@eamaim/database';
 import {
-  functions, functionalFailures, failureModes, fmeaAnalysis,
-  failureEvents, rcmDecisions, criticalityAnalysis, reliabilityMetrics,
+  assetFunctions as functions, functionalFailures, failureModes, fmeaAnalyses as fmeaAnalysis,
+  failureEvents, rcmDecisions, criticalityAnalyses as criticalityAnalysis, reliabilityMetrics,
   rootCauseAnalyses, weibullAnalyses, ramAnalyses,
 } from '@eamaim/database/schema';
 
