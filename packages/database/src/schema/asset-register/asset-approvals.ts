@@ -22,7 +22,7 @@ export const assetApprovals = pgTable(
     approvalStep: integer('approval_step').notNull(),
     approverRole: varchar('approver_role', { length: 100 }).notNull(),
     approverId: uuid('approver_id'),
-    status: assetApprovalStatusEnum('asset_approval_status').notNull().default('PENDING'),
+    status: assetApprovalStatusEnum('status').notNull().default('PENDING'),
     comments: text('comments'),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
