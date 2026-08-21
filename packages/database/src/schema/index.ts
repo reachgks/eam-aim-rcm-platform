@@ -23,6 +23,7 @@ export * from './asset-register/functional-locations';
 export * from './asset-register/asset-attributes';
 export * from './asset-register/asset-lifecycle';
 export * from './asset-register/asset-classification';
+export * from './asset-register/asset-approvals';
 
 // ── Common Data Environment (CDE) ──
 export * from './cde/information-containers';

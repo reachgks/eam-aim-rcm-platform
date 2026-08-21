@@ -6,6 +6,7 @@ import { functionalLocations } from './functional-locations';
 // ── Enums ──────────────────────────────────────────────────────────────────────
 export const assetStatusEnum = pgEnum('asset_status', [
   'PLANNED',
+  'PENDING_APPROVAL',
   'ACTIVE',
   'INACTIVE',
   'DECOMMISSIONED',

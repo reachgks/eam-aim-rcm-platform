@@ -13,6 +13,21 @@ export async function assetRoutes(server: FastifyInstance) {
     return result;
   });
 
+  // GET /api/v1/assets/locations — All functional locations for picker
+  server.get('/locations', async (request) => {
+    return { data: await assetService.getLocations(request.tenantId) };
+  });
+
+  // GET /api/v1/assets/types — All asset types for picker
+  server.get('/types', async (request) => {
+    return { data: await assetService.getAssetTypes(request.tenantId) };
+  });
+
+  // GET /api/v1/assets/list-simple — Minimal asset list for parent picker
+  server.get('/list-simple', async (request) => {
+    return { data: await assetService.getSimpleList(request.tenantId) };
+  });
+
   // GET /api/v1/assets/summary/status — Status breakdown
   server.get('/summary/status', async (request) => {
     return { data: await assetService.getStatusSummary(request.tenantId) };
@@ -38,10 +53,27 @@ export async function assetRoutes(server: FastifyInstance) {
     return { data: tree };
   });
 
-  // POST /api/v1/assets — Create asset
+  // GET /api/v1/assets/:id/approvals — Get approval status
+  server.get('/:id/approvals', async (request) => {
+    const { id } = request.params as any;
+    return { data: await assetService.getApprovals(request.tenantId, id) };
+  });
+
+  // POST /api/v1/assets — Create asset (with optional sensors & auto approval)
   server.post('/', async (request, reply) => {
     const asset = await assetService.create(request.tenantId, request.body as any);
     return reply.code(201).send({ data: asset });
+  });
+
+  // POST /api/v1/assets/:id/approvals — Process approval decision
+  server.post('/:id/approvals', async (request, reply) => {
+    const { id } = request.params as any;
+    const { approvalId, decision, comments } = request.body as any;
+    const result = await assetService.processApproval(
+      request.tenantId, id, approvalId, request.userId, decision, comments
+    );
+    if (!result) return reply.code(404).send({ error: 'Approval not found' });
+    return { data: result };
   });
 
   // PUT /api/v1/assets/:id — Update asset
