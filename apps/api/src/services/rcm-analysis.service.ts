@@ -40,7 +40,7 @@ export class RcmAnalysisService {
   async getFailureEvents(tenantId: string, assetId?: string) {
     const conditions = [eq(failureEvents.tenantId, tenantId)];
     if (assetId) conditions.push(eq(failureEvents.assetId, assetId));
-    return db.select().from(failureEvents).where(and(...conditions)).orderBy(desc(failureEvents.failureDate));
+    return db.select().from(failureEvents).where(and(...conditions)).orderBy(desc(failureEvents.eventDate));
   }
 
   // ── RCM Decisions ──
@@ -59,8 +59,73 @@ export class RcmAnalysisService {
   async getCriticalityAnalysis(tenantId: string, assetId: string) {
     return db.select().from(criticalityAnalysis)
       .where(and(eq(criticalityAnalysis.tenantId, tenantId), eq(criticalityAnalysis.assetId, assetId)))
-      .orderBy(desc(criticalityAnalysis.analysisDate));
+      .orderBy(desc(criticalityAnalysis.createdAt));
   }
+
+  async createCriticalityAssessment(tenantId: string, assetId: string, data: any) {
+    // Weighted scoring: Safety(5) + Environment(4) + Production(4) + Quality(3) + Maintenance(2) = max 90
+    const s = Number(data.safetyImpact || 1);
+    const e = Number(data.environmentalImpact || 1);
+    const p = Number(data.productionImpact || 1);
+    const q = Number(data.qualityImpact || 1);
+    const m = Number(data.maintenanceCostImpact || 1);
+    const rawScore = (s * 5) + (e * 4) + (p * 4) + (q * 3) + (m * 2);
+    const normalized = Math.round((rawScore / 90) * 100);
+    const grade = normalized > 75 ? 'A' : normalized > 50 ? 'B' : normalized > 25 ? 'C' : 'D';
+
+    const [assessment] = await db.insert(criticalityAnalysis).values({
+      tenantId, assetId,
+      methodology: data.methodology || 'SEMI_QUANTITATIVE',
+      safetyImpact: s, environmentalImpact: e, productionImpact: p,
+      qualityImpact: q, maintenanceCostImpact: m,
+      score: String(normalized), overallCriticality: grade,
+      assessedBy: data.assessedBy, assessedAt: new Date(),
+      nextReviewDate: data.nextReviewDate, notes: data.notes,
+    }).returning();
+
+    // Update asset criticality
+    const { assets } = await import('@eamaim/database/schema');
+    await db.update(assets).set({ criticality: grade as any }).where(and(eq(assets.id, assetId), eq(assets.tenantId, tenantId)));
+
+    return assessment;
+  }
+
+  async getCriticalityDashboard(tenantId: string) {
+    const all = await db.select().from(criticalityAnalysis)
+      .where(eq(criticalityAnalysis.tenantId, tenantId))
+      .orderBy(desc(criticalityAnalysis.createdAt));
+
+    // Latest assessment per asset
+    const latestByAsset = new Map<string, any>();
+    for (const a of all) {
+      if (!latestByAsset.has(a.assetId)) latestByAsset.set(a.assetId, a);
+    }
+    const latest = Array.from(latestByAsset.values());
+
+    const byGrade = { A: 0, B: 0, C: 0, D: 0 };
+    for (const a of latest) {
+      if (a.overallCriticality && byGrade[a.overallCriticality as keyof typeof byGrade] !== undefined) {
+        byGrade[a.overallCriticality as keyof typeof byGrade]++;
+      }
+    }
+
+    const overdue = latest.filter(a => a.nextReviewDate && new Date(a.nextReviewDate) < new Date());
+
+    return { totalAssessed: latest.length, byGrade, overdueCount: overdue.length, assessments: latest };
+  }
+
+  async getAssetsForReassessment(tenantId: string) {
+    const all = await db.select().from(criticalityAnalysis)
+      .where(eq(criticalityAnalysis.tenantId, tenantId))
+      .orderBy(desc(criticalityAnalysis.createdAt));
+
+    const latestByAsset = new Map<string, any>();
+    for (const a of all) {
+      if (!latestByAsset.has(a.assetId)) latestByAsset.set(a.assetId, a);
+    }
+    return Array.from(latestByAsset.values()).filter(a => a.nextReviewDate && new Date(a.nextReviewDate) <= new Date());
+  }
+
 
   // ── Reliability Metrics ──
   async getReliabilityMetrics(tenantId: string, assetId: string) {

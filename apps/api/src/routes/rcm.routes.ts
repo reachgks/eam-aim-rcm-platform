@@ -33,9 +33,24 @@ export async function rcmRoutes(server: FastifyInstance) {
     return reply.code(201).send({ data: await rcmAnalysisService.createRcmDecision(request.tenantId, request.body) });
   });
 
+  // ── Criticality ──
+  server.get('/criticality/dashboard', async (request) => {
+    return { data: await rcmAnalysisService.getCriticalityDashboard(request.tenantId) };
+  });
+
+  server.get('/criticality/reassessment-queue', async (request) => {
+    return { data: await rcmAnalysisService.getAssetsForReassessment(request.tenantId) };
+  });
+
   server.get('/criticality/:assetId', async (request) => {
     const { assetId } = request.params as any;
     return { data: await rcmAnalysisService.getCriticalityAnalysis(request.tenantId, assetId) };
+  });
+
+  server.post('/criticality/:assetId', async (request, reply) => {
+    const { assetId } = request.params as any;
+    const result = await rcmAnalysisService.createCriticalityAssessment(request.tenantId, assetId, request.body);
+    return reply.code(201).send({ data: result });
   });
 
   server.get('/reliability/:assetId', async (request) => {

@@ -23,6 +23,8 @@ import { servicerequestsRoutes } from './routes/service-requests.routes';
 import { slaRoutes } from './routes/sla.routes';
 import { warrantyRoutes } from './routes/warranty.routes';
 import { reportsRoutes } from './routes/reports.routes';
+import { riskRoutes } from './routes/risk.routes';
+import { shiftLogbookRoutes } from './routes/shift-logbook.routes';
 
 // ── Decorate Fastify with shared instances ──
 declare module 'fastify' {
@@ -103,6 +105,8 @@ async function bootstrap() {
   await server.register(slaRoutes, { prefix: '/api/v1/sla' });
   await server.register(warrantyRoutes, { prefix: '/api/v1/warranty' });
   await server.register(reportsRoutes, { prefix: '/api/v1/reports' });
+  await server.register(riskRoutes, { prefix: '/api/v1/risk' });
+  await server.register(shiftLogbookRoutes, { prefix: '/api/v1/shift-logbook' });
 
   // ── Health Check ──
   server.get('/health', async () => {

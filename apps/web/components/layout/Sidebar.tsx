@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Box, Wrench, Package, ShoppingCart,
   DollarSign, Activity, Shield, FileCheck, Building2,
   Users, Briefcase, ClipboardList, Timer, BadgeCheck,
-  BarChart3, Settings, ChevronLeft, ChevronRight
+  BarChart3, Settings, ChevronLeft, ChevronRight, BookOpen, Gauge
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -22,6 +22,7 @@ const navGroups = [
     items: [
       { href: '/dashboard/assets', icon: Box, label: 'Assets' },
       { href: '/dashboard/maintenance', icon: Wrench, label: 'Maintenance' },
+      { href: '/dashboard/maintenance/logbook', icon: BookOpen, label: 'Shift Logbook' },
       { href: '/dashboard/inventory', icon: Package, label: 'Inventory' },
       { href: '/dashboard/procurement', icon: ShoppingCart, label: 'Procurement' },
     ],
@@ -31,6 +32,8 @@ const navGroups = [
     items: [
       { href: '/dashboard/telemetry', icon: Activity, label: 'Telemetry' },
       { href: '/dashboard/rcm', icon: BarChart3, label: 'RCM' },
+      { href: '/dashboard/rcm/criticality', icon: Shield, label: 'Criticality' },
+      { href: '/dashboard/rcm/risk', icon: Gauge, label: 'Risk Analyzer' },
       { href: '/dashboard/financials', icon: DollarSign, label: 'Financials' },
     ],
   },

@@ -184,3 +184,7 @@ export * from './performance/condition-assessments';
 export * from './performance/meter-readings';
 export * from './performance/kpi-definitions';
 export * from './performance/kpi-results';
+
+export * from './rcm/risk-assessments';
+export * from './rcm/risk-mitigations';
+export * from './maintenance/shift-logbook';
