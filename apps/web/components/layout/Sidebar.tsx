@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Box, Wrench, Package, ShoppingCart,
   DollarSign, Activity, Shield, FileCheck, Building2,
   Users, Briefcase, ClipboardList, Timer, BadgeCheck,
-  BarChart3, Settings, ChevronLeft, ChevronRight, BookOpen, Gauge
+  BarChart3, Settings, ChevronLeft, ChevronRight, BookOpen, Gauge, Database
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -58,6 +58,7 @@ const navGroups = [
   {
     label: 'System',
     items: [
+      { href: '/dashboard/admin/master-data', icon: Database, label: 'Master Data' },
       { href: '/dashboard/settings', icon: Settings, label: 'Settings' },
     ],
   },

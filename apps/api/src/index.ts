@@ -25,6 +25,8 @@ import { warrantyRoutes } from './routes/warranty.routes';
 import { reportsRoutes } from './routes/reports.routes';
 import { riskRoutes } from './routes/risk.routes';
 import { shiftLogbookRoutes } from './routes/shift-logbook.routes';
+import { masterDataRoutes } from './routes/master-data.routes';
+import multipart from '@fastify/multipart';
 
 // ── Decorate Fastify with shared instances ──
 declare module 'fastify' {
@@ -60,6 +62,8 @@ async function bootstrap() {
     secret: process.env.JWT_SECRET || 'change-me-in-production',
     sign: { expiresIn: '24h' },
   });
+
+  await server.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
   // ── Tenant Context Middleware ──
   server.addHook('onRequest', async (request, reply) => {
@@ -107,6 +111,7 @@ async function bootstrap() {
   await server.register(reportsRoutes, { prefix: '/api/v1/reports' });
   await server.register(riskRoutes, { prefix: '/api/v1/risk' });
   await server.register(shiftLogbookRoutes, { prefix: '/api/v1/shift-logbook' });
+  await server.register(masterDataRoutes, { prefix: '/api/v1/master-data' });
 
   // ── Health Check ──
   server.get('/health', async () => {
