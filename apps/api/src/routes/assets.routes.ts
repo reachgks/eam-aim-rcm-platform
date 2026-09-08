@@ -38,7 +38,13 @@ export async function assetRoutes(server: FastifyInstance) {
     return { data: await assetService.getCriticalitySummary(request.tenantId) };
   });
 
-  // GET /api/v1/assets/:id — Get asset with related data
+  // GET /api/v1/assets/pending-approvals — All pending approvals for current user's role
+  server.get('/pending-approvals', async (request) => {
+    const { role } = request.query as any;
+    return { data: await assetService.getPendingApprovals(request.tenantId, role) };
+  });
+
+  // GET /api/v1/assets/:id — Get asset with related data + allowed transitions
   server.get('/:id', async (request, reply) => {
     const { id } = request.params as any;
     const asset = await assetService.findById(request.tenantId, id);
@@ -59,10 +65,27 @@ export async function assetRoutes(server: FastifyInstance) {
     return { data: await assetService.getApprovals(request.tenantId, id) };
   });
 
+  // GET /api/v1/assets/:id/status-history — Get status transition history
+  server.get('/:id/status-history', async (request) => {
+    const { id } = request.params as any;
+    return { data: await assetService.getStatusHistory(request.tenantId, id) };
+  });
+
   // POST /api/v1/assets — Create asset (with optional sensors & auto approval)
   server.post('/', async (request, reply) => {
     const asset = await assetService.create(request.tenantId, request.body as any);
     return reply.code(201).send({ data: asset });
+  });
+
+  // POST /api/v1/assets/:id/request-status-change — Request a status transition
+  server.post('/:id/request-status-change', async (request, reply) => {
+    const { id } = request.params as any;
+    const { requestedStatus, comments } = request.body as any;
+    const result = await assetService.requestStatusTransition(
+      request.tenantId, id, requestedStatus, request.userId, comments
+    );
+    if (result.error) return reply.code(400).send({ error: result.error });
+    return reply.code(201).send(result);
   });
 
   // POST /api/v1/assets/:id/approvals — Process approval decision
@@ -73,6 +96,7 @@ export async function assetRoutes(server: FastifyInstance) {
       request.tenantId, id, approvalId, request.userId, decision, comments
     );
     if (!result) return reply.code(404).send({ error: 'Approval not found' });
+    if ((result as any).error) return reply.code(400).send(result);
     return { data: result };
   });
 

@@ -7,6 +7,7 @@ import { functionalLocations } from './functional-locations';
 export const assetStatusEnum = pgEnum('asset_status', [
   'PLANNED',
   'PENDING_APPROVAL',
+  'INSTALLED',
   'ACTIVE',
   'INACTIVE',
   'DECOMMISSIONED',

@@ -11,6 +11,24 @@ import {
   assetApprovals,
 } from '@eamaim/database/schema';
 
+// ── Valid Status Transitions ──
+// Defines which status transitions are allowed and what approval is needed
+const STATUS_TRANSITIONS: Record<string, { next: string[]; approverRole: string; label: string }[]> = {
+  'PLANNED':          [{ next: ['INSTALLED'], approverRole: 'ENGINEER', label: 'Install' }],
+  'INSTALLED':        [{ next: ['ACTIVE'], approverRole: 'MANAGER', label: 'Activate' }],
+  'ACTIVE':           [
+    { next: ['INACTIVE'], approverRole: 'MANAGER', label: 'Deactivate' },
+    { next: ['DECOMMISSIONED'], approverRole: 'MANAGER', label: 'Decommission' },
+  ],
+  'INACTIVE':         [
+    { next: ['ACTIVE'], approverRole: 'MANAGER', label: 'Re-activate' },
+    { next: ['DECOMMISSIONED'], approverRole: 'MANAGER', label: 'Decommission' },
+  ],
+  'DECOMMISSIONED':   [{ next: ['DISPOSED'], approverRole: 'TENANT_ADMIN', label: 'Dispose' }],
+  'PENDING_APPROVAL': [],
+  'DISPOSED':         [],
+};
+
 export class AssetService {
   // ── List Assets with Pagination & Filtering ──
   async findAll(tenantId: string, options: {
@@ -88,15 +106,244 @@ export class AssetService {
         .orderBy(desc(assetLifecycleEvents.eventDate))
         .limit(20),
 
-      db.select().from(assetApprovals)
-        .where(and(eq(assetApprovals.assetId, id), eq(assetApprovals.tenantId, tenantId)))
-        .orderBy(asc(assetApprovals.approvalStep)),
+      db.execute(sql`
+        SELECT id, tenant_id as "tenantId", asset_id as "assetId", approval_type as "approvalType",
+               approval_step as "approvalStep", approver_role as "approverRole", approver_id as "approverId",
+               status, requested_status as "requestedStatus", previous_status as "previousStatus",
+               requested_by as "requestedBy", comments, decided_at as "decidedAt", created_at as "createdAt"
+        FROM asset_approvals
+        WHERE asset_id = ${id} AND tenant_id = ${tenantId}
+        ORDER BY created_at DESC LIMIT 20
+      `).then(r => r.rows),
 
       db.select().from(sensorRegistry)
         .where(and(eq(sensorRegistry.assetId, id), eq(sensorRegistry.tenantId, tenantId))),
     ]);
 
-    return { ...asset, attributes, children, lifecycleEvents, approvals, sensors };
+    // Get allowed transitions for current status
+    const transitions = this.getAllowedTransitions(asset.status);
+
+    return { ...asset, attributes, children, lifecycleEvents, approvals, sensors, allowedTransitions: transitions };
+  }
+
+  // ── Get Allowed Transitions for a Status ──
+  getAllowedTransitions(currentStatus: string) {
+    const rules = STATUS_TRANSITIONS[currentStatus] || [];
+    return rules.map(r => ({
+      targetStatus: r.next[0],
+      label: r.label,
+      approverRole: r.approverRole,
+    }));
+  }
+
+  // ── Request Status Transition (creates approval record) ──
+  async requestStatusTransition(tenantId: string, assetId: string, requestedStatus: string, requestedBy: string, comments?: string) {
+    // Fetch current asset
+    const [asset] = await db.select()
+      .from(assets)
+      .where(and(eq(assets.id, assetId), eq(assets.tenantId, tenantId)))
+      .limit(1);
+
+    if (!asset) return { error: 'Asset not found' };
+
+    // Validate transition
+    const rules = STATUS_TRANSITIONS[asset.status] || [];
+    const rule = rules.find(r => r.next.includes(requestedStatus));
+    if (!rule) return { error: `Invalid transition from ${asset.status} to ${requestedStatus}` };
+
+    // Check if there's already a pending transition
+    const pendingTransitions = await db.select({ total: count() })
+      .from(assetApprovals)
+      .where(and(
+        eq(assetApprovals.assetId, assetId),
+        eq(assetApprovals.tenantId, tenantId),
+        sql`approval_type = 'STATUS_CHANGE'`,
+        eq(assetApprovals.status, 'PENDING'),
+      ));
+
+    if (Number(pendingTransitions[0].total) > 0) {
+      return { error: 'There is already a pending status change request for this asset' };
+    }
+
+    // Determine approval steps based on criticality
+    const approvalSteps: { step: number; role: string }[] = [];
+    if (asset.criticality === 'A') {
+      // Critical assets: 2-step approval
+      approvalSteps.push({ step: 1, role: rule.approverRole });
+      if (rule.approverRole !== 'TENANT_ADMIN') {
+        approvalSteps.push({ step: 2, role: 'TENANT_ADMIN' });
+      }
+    } else if (asset.criticality === 'B') {
+      // Important assets: 1-step by MANAGER+
+      approvalSteps.push({ step: 1, role: rule.approverRole });
+    } else {
+      // Standard/Non-critical: 1-step by ENGINEER
+      approvalSteps.push({ step: 1, role: 'ENGINEER' });
+    }
+
+    // Create approval records using raw SQL to include dynamically-added columns
+    const inserted = [];
+    const reqBy = requestedBy || null;
+    const commentText = comments || `Request to change status from ${asset.status} to ${requestedStatus}`;
+    for (const s of approvalSteps) {
+      const result = await db.execute(sql`
+        INSERT INTO asset_approvals (tenant_id, asset_id, approval_type, approval_step, approver_role, status, requested_status, previous_status, requested_by, comments)
+        VALUES (${tenantId}, ${assetId}, 'STATUS_CHANGE', ${s.step}, ${s.role}, 'PENDING', ${requestedStatus}, ${asset.status}, ${reqBy}, ${commentText})
+        RETURNING *
+      `);
+      inserted.push(result.rows[0]);
+    }
+
+    // Update asset status to PENDING_APPROVAL
+    await db.update(assets)
+      .set({ status: 'PENDING_APPROVAL', updatedAt: new Date() })
+      .where(eq(assets.id, assetId));
+
+    // Record lifecycle event
+    const eventTypeMap: Record<string, string> = {
+      'INSTALLED': 'INSTALLATION',
+      'ACTIVE': 'COMMISSIONING',
+      'INACTIVE': 'MAINTENANCE',
+      'DECOMMISSIONED': 'DECOMMISSION',
+      'DISPOSED': 'DISPOSAL',
+    };
+
+    await db.insert(assetLifecycleEvents).values({
+      tenantId,
+      assetId,
+      eventType: (eventTypeMap[requestedStatus] || 'MODIFICATION') as any,
+      eventDate: new Date().toISOString().split('T')[0],
+      description: `Status change requested: ${asset.status} → ${requestedStatus}`,
+      performedBy: requestedBy,
+    });
+
+    return {
+      success: true,
+      approvals: inserted,
+      message: `Status change to ${requestedStatus} submitted for approval (${approvalSteps.length} step${approvalSteps.length > 1 ? 's' : ''})`,
+    };
+  }
+
+  // ── Process Status Transition Approval ──
+  async processStatusApproval(tenantId: string, assetId: string, approvalId: string, approverId: string, decision: 'APPROVED' | 'REJECTED', comments?: string) {
+    // Get the approval record using raw SQL to read dynamically-added columns
+    const approvalResult = await db.execute(sql`
+      SELECT id, status, requested_status, previous_status, approval_type
+      FROM asset_approvals
+      WHERE id = ${approvalId} AND tenant_id = ${tenantId} AND approval_type = 'STATUS_CHANGE'
+      LIMIT 1
+    `);
+
+    if (!approvalResult.rows || approvalResult.rows.length === 0) return null;
+    const approval = approvalResult.rows[0] as any;
+    if (approval.status !== 'PENDING') return { error: 'Approval already processed' };
+
+    // Update the approval record
+    const [updated] = await db.update(assetApprovals)
+      .set({ status: decision, approverId, comments, decidedAt: new Date() })
+      .where(eq(assetApprovals.id, approvalId))
+      .returning();
+
+    if (decision === 'REJECTED') {
+      // Cancel all pending approvals for this transition
+      await db.update(assetApprovals)
+        .set({ status: 'REJECTED', comments: 'Auto-rejected: previous step was rejected' })
+        .where(and(
+          eq(assetApprovals.assetId, assetId),
+          eq(assetApprovals.tenantId, tenantId),
+          sql`approval_type = 'STATUS_CHANGE'`,
+          eq(assetApprovals.status, 'PENDING'),
+        ));
+
+      // Revert asset to previous status
+      const revertStatus = approval.previous_status || 'PLANNED';
+      await db.update(assets)
+        .set({ status: revertStatus as any, updatedAt: new Date() })
+        .where(eq(assets.id, assetId));
+
+      // Record lifecycle event
+      await db.insert(assetLifecycleEvents).values({
+        tenantId,
+        assetId,
+        eventType: 'MODIFICATION' as any,
+        eventDate: new Date().toISOString().split('T')[0],
+        description: `Status change to ${approval.requested_status} was rejected. Reverted to ${revertStatus}.`,
+        performedBy: approverId,
+      });
+
+      return { ...updated, assetStatus: revertStatus, outcome: 'REJECTED' };
+    }
+
+    // Check remaining pending steps for this transition batch
+    const remainingPending = await db.select({ total: count() })
+      .from(assetApprovals)
+      .where(and(
+        eq(assetApprovals.assetId, assetId),
+        eq(assetApprovals.tenantId, tenantId),
+        sql`approval_type = 'STATUS_CHANGE'`,
+        eq(assetApprovals.status, 'PENDING'),
+      ));
+
+    if (Number(remainingPending[0].total) === 0) {
+      // All steps approved — apply the status transition
+      const newStatus = approval.requested_status || 'ACTIVE';
+      await db.update(assets)
+        .set({ status: newStatus as any, updatedAt: new Date() })
+        .where(eq(assets.id, assetId));
+
+      // Record lifecycle event
+      const eventTypeMap: Record<string, string> = {
+        'INSTALLED': 'INSTALLATION',
+        'ACTIVE': 'COMMISSIONING',
+        'INACTIVE': 'MAINTENANCE',
+        'DECOMMISSIONED': 'DECOMMISSION',
+        'DISPOSED': 'DISPOSAL',
+      };
+
+      await db.insert(assetLifecycleEvents).values({
+        tenantId,
+        assetId,
+        eventType: (eventTypeMap[newStatus] || 'MODIFICATION') as any,
+        eventDate: new Date().toISOString().split('T')[0],
+        description: `Status changed to ${newStatus} (all approvals completed)`,
+        performedBy: approverId,
+      });
+
+      return { ...updated, assetStatus: newStatus, outcome: 'COMPLETED' };
+    }
+
+    return { ...updated, assetStatus: 'PENDING_APPROVAL', outcome: 'PARTIALLY_APPROVED' };
+  }
+
+  // ── Get Pending Approvals (for approvers) ──
+  async getPendingApprovals(tenantId: string, approverRole?: string) {
+    const roleFilter = approverRole ? sql`AND aa.approver_role = ${approverRole}` : sql``;
+    const result = await db.execute(sql`
+      SELECT aa.id, aa.asset_id as "assetId", aa.approval_type as "approvalType",
+             aa.approval_step as "approvalStep", aa.approver_role as "approverRole",
+             aa.requested_status as "requestedStatus", aa.previous_status as "previousStatus",
+             aa.comments, aa.created_at as "createdAt",
+             a.name as "assetName", a.tag_number as "assetTag", a.status as "assetCurrentStatus"
+      FROM asset_approvals aa
+      LEFT JOIN assets a ON aa.asset_id = a.id
+      WHERE aa.tenant_id = ${tenantId} AND aa.status = 'PENDING' ${roleFilter}
+      ORDER BY aa.created_at ASC
+    `);
+    return result.rows;
+  }
+
+  // ── Get Status Transition History for an Asset ──
+  async getStatusHistory(tenantId: string, assetId: string) {
+    const result = await db.execute(sql`
+      SELECT id, approval_type as "approvalType", approval_step as "approvalStep",
+             approver_role as "approverRole", approver_id as "approverId", status,
+             requested_status as "requestedStatus", previous_status as "previousStatus",
+             comments, decided_at as "decidedAt", created_at as "createdAt"
+      FROM asset_approvals
+      WHERE asset_id = ${assetId} AND tenant_id = ${tenantId} AND approval_type = 'STATUS_CHANGE'
+      ORDER BY created_at DESC LIMIT 50
+    `);
+    return result.rows;
   }
 
   // ── Create Asset (with approval workflow) ──
@@ -113,15 +360,15 @@ export class AssetService {
     if (criticality === 'A') {
       // 2-step approval: Engineer then Manager
       await db.insert(assetApprovals).values([
-        { tenantId, assetId: asset.id, approvalStep: 1, approverRole: 'ENGINEER', status: 'PENDING' },
-        { tenantId, assetId: asset.id, approvalStep: 2, approverRole: 'MANAGER', status: 'PENDING' },
+        { tenantId, assetId: asset.id, approvalType: 'CREATION' as const, approvalStep: 1, approverRole: 'ENGINEER', status: 'PENDING' as const },
+        { tenantId, assetId: asset.id, approvalType: 'CREATION' as const, approvalStep: 2, approverRole: 'MANAGER', status: 'PENDING' as const },
       ]);
       await db.update(assets).set({ status: 'PENDING_APPROVAL' }).where(eq(assets.id, asset.id));
       asset.status = 'PENDING_APPROVAL';
     } else if (criticality === 'B') {
       // 1-step approval: Manager
       await db.insert(assetApprovals).values([
-        { tenantId, assetId: asset.id, approvalStep: 1, approverRole: 'MANAGER', status: 'PENDING' },
+        { tenantId, assetId: asset.id, approvalType: 'CREATION' as const, approvalStep: 1, approverRole: 'MANAGER', status: 'PENDING' as const },
       ]);
       await db.update(assets).set({ status: 'PENDING_APPROVAL' }).where(eq(assets.id, asset.id));
       asset.status = 'PENDING_APPROVAL';
@@ -232,14 +479,32 @@ export class AssetService {
 
   // ── Get Approvals for Asset ──
   async getApprovals(tenantId: string, assetId: string) {
-    return db.select().from(assetApprovals)
-      .where(and(eq(assetApprovals.tenantId, tenantId), eq(assetApprovals.assetId, assetId)))
-      .orderBy(asc(assetApprovals.approvalStep));
+    const result = await db.execute(sql`
+      SELECT id, approval_type as "approvalType", approval_step as "approvalStep",
+             approver_role as "approverRole", approver_id as "approverId", status,
+             requested_status as "requestedStatus", previous_status as "previousStatus",
+             comments, decided_at as "decidedAt", created_at as "createdAt"
+      FROM asset_approvals
+      WHERE tenant_id = ${tenantId} AND asset_id = ${assetId}
+      ORDER BY created_at DESC
+    `);
+    return result.rows;
   }
 
-  // ── Process Approval Decision ──
+  // ── Process Approval Decision (original creation approval flow) ──
   async processApproval(tenantId: string, assetId: string, approvalId: string, approverId: string, decision: 'APPROVED' | 'REJECTED', comments?: string) {
-    // Update the approval record
+    // Check the approval type using raw SQL to reliably read the approval_type column
+    const typeCheck = await db.execute(sql`SELECT approval_type FROM asset_approvals WHERE id = ${approvalId} AND tenant_id = ${tenantId} LIMIT 1`);
+    if (!typeCheck.rows || typeCheck.rows.length === 0) return null;
+
+    const approvalType = (typeCheck.rows[0] as any).approval_type;
+
+    // Delegate to status transition handler if it's a status change
+    if (approvalType === 'STATUS_CHANGE') {
+      return this.processStatusApproval(tenantId, assetId, approvalId, approverId, decision, comments);
+    }
+
+    // Original creation approval flow
     const [updated] = await db.update(assetApprovals)
       .set({ status: decision, approverId, comments, decidedAt: new Date() })
       .where(and(eq(assetApprovals.id, approvalId), eq(assetApprovals.tenantId, tenantId)))
@@ -258,6 +523,7 @@ export class AssetService {
       .where(and(
         eq(assetApprovals.assetId, assetId),
         eq(assetApprovals.tenantId, tenantId),
+        sql`approval_type = 'CREATION'`,
         eq(assetApprovals.status, 'PENDING'),
       ));
 

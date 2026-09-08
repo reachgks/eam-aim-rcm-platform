@@ -19,10 +19,14 @@ export const assetApprovals = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
     assetId: uuid('asset_id').notNull().references(() => assets.id, { onDelete: 'cascade' }),
+    approvalType: varchar('approval_type', { length: 50 }).notNull().default('CREATION'),
     approvalStep: integer('approval_step').notNull(),
     approverRole: varchar('approver_role', { length: 100 }).notNull(),
     approverId: uuid('approver_id'),
     status: assetApprovalStatusEnum('status').notNull().default('PENDING'),
+    requestedStatus: varchar('requested_status', { length: 50 }),
+    previousStatus: varchar('previous_status', { length: 50 }),
+    requestedBy: uuid('requested_by'),
     comments: text('comments'),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -31,6 +35,7 @@ export const assetApprovals = pgTable(
     index('idx_asset_approvals_tenant_asset').on(table.tenantId, table.assetId),
     index('idx_asset_approvals_approver').on(table.tenantId, table.approverId),
     index('idx_asset_approvals_status').on(table.tenantId, table.status),
+    index('idx_asset_approvals_type').on(table.tenantId, table.approvalType),
   ],
 );
 

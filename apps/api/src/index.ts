@@ -35,6 +35,7 @@ declare module 'fastify' {
   }
   interface FastifyRequest {
     tenantId: string;
+    userId: string;
   }
 }
 
@@ -51,6 +52,7 @@ async function bootstrap() {
   // ── Decorate with Database ──
   server.decorate('db', db);
   server.decorateRequest('tenantId', '');
+  server.decorateRequest('userId', '');
 
   // ── Plugins ──
   await server.register(cors, {
@@ -65,13 +67,23 @@ async function bootstrap() {
 
   await server.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
-  // ── Tenant Context Middleware ──
+  // ── Tenant & User Context Middleware ──
   server.addHook('onRequest', async (request, reply) => {
     const headerTenantId = request.headers['x-tenant-id'] as string;
     if (headerTenantId) {
       request.tenantId = headerTenantId;
       await setTenantContext(headerTenantId);
     }
+    // Extract userId from JWT if present
+    try {
+      const auth = request.headers.authorization;
+      if (auth?.startsWith('Bearer ')) {
+        const decoded = server.jwt.decode(auth.slice(7)) as any;
+        if (decoded?.sub) {
+          request.userId = decoded.sub;
+        }
+      }
+    } catch { /* ignore decode errors */ }
   });
 
   // ── Audit Logging Hook ──
